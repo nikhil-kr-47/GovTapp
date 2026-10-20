@@ -41,7 +41,8 @@ model Tender{
   department String
   value String?
   deadline DateTime?
-  sourceUrl String @unique
+  referenceNo String @unique
+  sourceUrl String? 
   category Category? @relation(fields:[categoryId],references:[id])
   categoryId String?
   scrapedAt DateTime @default(now())

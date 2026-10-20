@@ -1,6 +1,7 @@
-import axios from 'axios';
+ import axios from 'axios';
 import * as cheerio from 'cheerio';
 
+import {prisma} from "../lib/prisma.js";
 
 
 // Target page: Tenders by Closing Date (no CAPTCHA required)
@@ -66,9 +67,21 @@ async function scrapeTenders() {
 
 // Run it and print results so you can check the output by eye.
 scrapeTenders()
-  .then((tenders) => {
-    console.log(`Found ${tenders.length} tenders:\n`);
+  .then(async(tenders) => {
     console.log(tenders);
+     for(let tender of tenders){
+        await prisma.tender.upsert({
+            where:{referenceNo:tender.referenceNo},
+            update:{},
+            create:{
+                title:tender.title,
+                department: tender.department,
+                referenceNo: tender.referenceNo,
+                sourceUrl: tender.sourceUrl,
+            }
+
+        })
+     }
   })
   .catch((err) => {
     console.error('Scraper failed:', err.message);
