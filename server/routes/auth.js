@@ -7,7 +7,7 @@ import ExpressError from "../utils/expressError.js";
 
 const saltRounds=10;
 
-const router=express.Router();
+const router=express.Router({mergeParams:true});
 
 router.post("/signup",wrapAsync(async(req,res,next)=>{
     const {email,password,confirmPassword}=req.body;
