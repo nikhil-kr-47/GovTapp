@@ -1,7 +1,10 @@
 import express from "express";
+import "dotenv/config";
 
 //Route imports
 import authRoute from "./routes/auth.js";
+import catRoute from "./routes/categories.js";
+import tenderRoute from "./routes/tenders.js";
 
 const port=8000;
 
@@ -19,3 +22,5 @@ app.get("/",(req,res)=>{
 });
 
 app.use("/api/auth",authRoute);
+app.use('/api/categories', catRoute);
+app.use('/api/tenders', tenderRoute);
