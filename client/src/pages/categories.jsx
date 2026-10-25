@@ -1,10 +1,12 @@
 import { useState,useEffect } from "react";
 import api from "../api.js";
+import { useNavigate } from "react-router-dom";
 
 
 function Categories(){
      const [categories,setCategories]=useState([]);
      const [selected,setSelected]=useState([]);
+     const navigate=useNavigate();
 
      useEffect(()=>{
        api.get('/categories')
@@ -19,6 +21,7 @@ function Categories(){
 
      async function handleSave(){
          await api.post('/categories/select', { catIds: selected });
+         navigate('/dashboard');
          alert('Saved!');
      }
 
