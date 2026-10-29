@@ -3,6 +3,7 @@ import * as cheerio from 'cheerio';
 import { prisma } from "../lib/prisma.js";
 import sendAlert from '../utils/sendAlert.js';
 
+
 // Target page: Tenders by Closing Date (no CAPTCHA required)
 // https://eprocure.gov.in/epublish/app?page=FrontEndListTendersbyDate&service=page
 
@@ -79,9 +80,11 @@ function getCategoryForTender(tender, categoryMap) {
   return categoryMap["Civil Construction"] || Object.values(categoryMap)[0];
 }
 
-// Run scraper and notify interested users
-scrapeTenders()
-  .then(async (tenders) => {
+// Exported function for cron and manual runs
+async function runScraper() {
+  console.log("Starting tender scraper...");
+  try {
+    const tenders = await scrapeTenders();
     console.log(`Scraped ${tenders.length} tenders from eprocure.`);
 
     // Load available categories from database
@@ -95,13 +98,12 @@ scrapeTenders()
       if (!tender.referenceNo) continue;
 
       let existing = await prisma.tender.findUnique({
-        where: { referenceNo: tender.referenceNo }
+        where: { referenceNo: tender.referenceNo },
       });
 
       if (!existing) {
         const categoryId = getCategoryForTender(tender, categoryMap);
 
-        // Parse deadline string to a Date object safely
         let deadline = null;
         if (tender.deadlineText) {
           const parsed = new Date(tender.deadlineText);
@@ -118,12 +120,12 @@ scrapeTenders()
             sourceUrl: tender.sourceUrl,
             categoryId: categoryId || null,
             deadline: deadline,
-          }
+          },
         });
 
         console.log(`Saved new tender: "${saved.title}" [Ref: ${saved.referenceNo}]`);
 
-        // Find users subscribed to this category
+        // Notify users subscribed to this category
         if (saved.categoryId) {
           const interestedUsers = await prisma.userCategory.findMany({
             where: { categoryId: saved.categoryId },
@@ -144,10 +146,14 @@ scrapeTenders()
       }
     }
     console.log("Scraping and alert notifications complete.");
-  })
-  .catch((err) => {
-    console.error('Scraper failed:', err.message);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+  } catch (err) {
+    console.error("Scraper failed:", err.message);
+  }
+}
+
+export default runScraper;
+
+// Allows running directly from terminal: "node scripts/scraper.js"
+if (process.argv[1]?.endsWith("scraper.js")) {
+  runScraper().then(() => prisma.$disconnect());
+}
