@@ -1,32 +1,112 @@
 import { useState } from "react";
 import api from "../api.js";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 
-function Login(){
-    const [email,setMail]=useState("");
-    const [password,setPass]=useState("");
-     const [error,setErr]=useState("");
-    const navigate=useNavigate();
+function Login() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
-    async function handleSubmit(e) {
-        e.preventDefault();
-        try{
-        const res= await api.post("/auth/login",{email,password});
-        localStorage.setItem('token',res.data.token);
-        navigate("/categories");
-        }catch(err){
-          setErr(err.response?.data?.error||'Invalid email or password.');
-        }
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    try {
+      const res = await api.post("/auth/login", { email, password });
+      localStorage.setItem("token", res.data.token);
+
+      // 🚀 Smart Redirect:
+      if (res.data.hasPreferences) {
+        navigate("/dashboard"); // Has categories? Go to Dashboard!
+      } else {
+        navigate("/categories"); // Brand new? Pick categories first!
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || "Invalid email or password.");
+    } finally {
+      setLoading(false);
     }
+  }
 
-    return <>
-       <form onSubmit={handleSubmit}>
-        <input type="email" value={email} required placeholder="Email" onChange={(e)=>setMail(e.target.value)}></input>
-        <input type="password" value={password} required placeholder="Password" onChange={(e)=>setPass(e.target.value)}></input>
-        <button type="submit">Log in</button>
-        {error && <p>{error}</p>}
-       </form>
-    </>
+  return (
+    <div className="flex items-center justify-center px-4 py-12">
+      <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-50 text-blue-600 rounded-xl mb-3 text-2xl">
+            🏛️
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+            Welcome back
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Sign in to access your tender alerts and dashboard
+          </p>
+        </div>
+
+        {/* Error Alert */}
+        {error && (
+          <div className="mb-6 p-3.5 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg flex items-center gap-2">
+            <span>⚠️</span>
+            <span>{error}</span>
+          </div>
+        )}
+
+        {/* Login Form */}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+              Email Address
+            </label>
+            <input
+              type="email"
+              value={email}
+              required
+              placeholder="name@company.com"
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+              Password
+            </label>
+            <input
+              type="password"
+              value={password}
+              required
+              placeholder="••••••••"
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full mt-2 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-semibold rounded-lg shadow transition duration-150 ease-in-out cursor-pointer"
+          >
+            {loading ? "Logging in..." : "Log In"}
+          </button>
+        </form>
+
+        {/* Footer */}
+        <div className="mt-6 text-center text-xs text-slate-500">
+          Don't have an account yet?{" "}
+          <Link
+            to="/signup"
+            className="text-blue-600 hover:text-blue-700 font-semibold hover:underline"
+          >
+            Sign Up
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default Login;

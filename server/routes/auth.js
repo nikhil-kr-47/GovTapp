@@ -31,7 +31,7 @@ router.post("/login",wrapAsync(async(req,res,next)=>{
     const {email,password}=req.body;
     if(!email || !password) return res.status(404).json({ error: 'Insufficient data.' });
     
-    const user=await prisma.user.findUnique({where:{email}});
+    const user=await prisma.user.findUnique({where:{email},include:{categories:true}});
     if(!user)  return res.status(401).json({ error: 'Account not found.' });
 
     const passCompare=await bcrypt.compare(password, user.password);
@@ -43,7 +43,8 @@ router.post("/login",wrapAsync(async(req,res,next)=>{
           process.env.JWT_SECRET,
          { expiresIn: '7d' }
     );
-    res.json({token});
+    const hasPreferences = user.categories.length > 0;
+    res.json({token,hasPreferences});
 }));
 
 export default router;

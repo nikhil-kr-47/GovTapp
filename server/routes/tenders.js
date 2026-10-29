@@ -10,6 +10,7 @@ router.get("/matching",requiresAuth,wrapAsync(async(req,res,next)=>{
    const userCategories=await prisma.userCategory.findMany({where:{userId:req.userId}});
    const catIds=userCategories.map(uc=>uc.categoryId);
    const tenders=await prisma.tender.findMany({where:{categoryId:{in:catIds}},
+    include: { category: true },
      orderBy:{scrapedAt:'desc'}
 
    });
