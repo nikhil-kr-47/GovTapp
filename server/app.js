@@ -10,15 +10,20 @@ import authRoute from "./routes/auth.js";
 import catRoute from "./routes/categories.js";
 import tenderRoute from "./routes/tenders.js";
 
-const port=8000;
+const port = process.env.PORT || 8000;
 
 const app=express();
+
+const allowedOrigins = [
+  "http://localhost:5173",
+  process.env.CLIENT_URL,
+].filter(Boolean);
 
 app.use(express.urlencoded({extended:true}));
 app.use(express.json());
 app.use(cors({
-  origin: "http://localhost:5173", // Allows your Vite React frontend
-  credentials: true,                // Allows cookies / authorization headers
+  origin: allowedOrigins,
+  credentials: true,
 }))
 
 app.listen(port,()=>{
