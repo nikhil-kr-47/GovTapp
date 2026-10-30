@@ -14,17 +14,22 @@ const port = process.env.PORT || 8000;
 
 const app=express();
 
-const allowedOrigins = [
-  "http://localhost:5173",
-  process.env.CLIENT_URL,
-].filter(Boolean);
-
-app.use(express.urlencoded({extended:true}));
-app.use(express.json());
 app.use(cors({
-  origin: allowedOrigins,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, or server-to-server)
+    if (!origin) return callback(null, true);
+    // Allow localhost, any vercel.app preview domain, or custom CLIENT_URL
+    if (
+      origin.includes("localhost") ||
+      origin.endsWith(".vercel.app") ||
+      (process.env.CLIENT_URL && origin === process.env.CLIENT_URL)
+    ) {
+      return callback(null, true);
+    }
+    return callback(new Error("Blocked by CORS"));
+  },
   credentials: true,
-}))
+}));
 
 app.listen(port,()=>{
     console.log("App started");
