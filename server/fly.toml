@@ -1,10 +1,10 @@
-# fly.toml app configuration file generated for govtapp on 2026-10-30T13:57:26Z
+# fly.toml app configuration file generated for govtapp on 2026-10-30T14:05:06Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
 app = 'govtapp'
-primary_region = 'ams'
+primary_region = 'sin'
 
 [build]
 
