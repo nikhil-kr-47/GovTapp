@@ -14,6 +14,9 @@ const port = process.env.PORT || 8000;
 
 const app=express();
 
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps, curl, or server-to-server)
