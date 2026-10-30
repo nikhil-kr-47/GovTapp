@@ -1,0 +1,53 @@
+services:
+  # 1. DATABASE SERVICE
+  postgres:
+    image: postgres:16-alpine
+    container_name: govtapp_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: govtapp_user
+      POSTGRES_PASSWORD: govtapp_password
+      POSTGRES_DB: govtapp_db
+    ports:
+      - "5432:5432" # Maps Mac port 5432 to container port 5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data # Persists your DB data even if container stops
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U govtapp_user -d govtapp_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. BACKEND API SERVICE
+  server:
+    build: ./server
+    container_name: govtapp_server
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: 8000
+      # Notice we connect to @postgres:5432 (the service name above!)
+      DATABASE_URL: "postgresql://govtapp_user:govtapp_password@postgres:5432/govtapp_db?schema=public"
+      JWT_SECRET: ${JWT_SECRET:-your_super_secret_jwt_key_here}
+      BREVO_API_KEY: ${BREVO_API_KEY:-your_brevo_api_key_here}
+      BREVO_SENDER_EMAIL: "kumar47nikhil@gmail.com"
+    depends_on:
+      postgres:
+        condition: service_healthy # Waits until Postgres is completely ready!
+
+  # 3. FRONTEND SERVICE
+  client:
+    build: ./client
+    container_name: govtapp_client
+    restart: always
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: "http://localhost:8000/api"
+    depends_on:
+      - server
+
+# Volumes: keeps your database records safe on your Mac's hard drive
+volumes:
+  pgdata:
