@@ -50,6 +50,18 @@ app.get("/",(req,res)=>{
     res.send("App is listening");
 });
 
+// Endpoint triggered by cron-job.org
+app.get("/api/cron/scrape", async (req, res) => {
+  console.log("⏰ Triggering scraper via external cron job...");
+  try {
+    await runScraper();
+    res.json({ message: "Scraper executed successfully!" });
+  } catch (err) {
+    console.error("Scraper failed:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.use("/api/auth",authRoute);
 app.use('/api/categories', catRoute);
 app.use('/api/tenders', tenderRoute);
