@@ -28,16 +28,15 @@ async function scrapeTenders() {
     // Skip header rows or empty state rows
     if (cells.length < 5) return;
 
-    // Title + Reference No often sit together in one cell
+    // Title + Reference No sit in cell 4 wrapped in brackets: [Title] [RefNo] [TenderID]
     const titleCellText = $(cells[4]).text().trim();
     const titleLink = $(cells[4]).find('a').attr('href');
 
-    // The actual title is the text before brackets
-    const cleanTitle = titleCellText.replace(/\[.*?\]/g, '').trim();
+    const matches = [...titleCellText.matchAll(/\[(.*?)\]/gs)].map(m => m[1].trim());
+    if (matches.length < 2) return; // Skip header row ("Title and Ref.No./Tender ID")
 
-    // Extract reference number from the first bracket [REF-NO]
-    const match = [...titleCellText.matchAll(/\[(.*?)\]/g)];
-    const referenceNo = match[0] ? match[0][1].trim() : null;
+    const cleanTitle = matches[0];
+    const referenceNo = matches[1] || matches[2];
 
     const deadlineText = $(cells[2]).text().trim(); // Bid Submission Closing Date
     const department = $(cells[5]).text().trim();   // Organisation Chain
