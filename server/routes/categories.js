@@ -2,6 +2,7 @@ import express from 'express';
 import wrapAsync from '../middlewares/wrapAsync.js';
 import {prisma} from '../lib/prisma.js';
 import requiresAuth from '../middlewares/auth.js';
+import redis from '../lib/redis.js';
 
 const router=express.Router({mergeParams:true});
 
@@ -20,6 +21,9 @@ router.get("/mine", requiresAuth, wrapAsync(async (req, res) => {
 }));
 
 router.post("/select",requiresAuth,wrapAsync(async(req,res,next)=>{
+    
+    await redis.del(`tenders:user:${req.userId}`);
+    
     const {catIds}=req.body;   //Could be multiple ids which user wants to see
     await prisma.userCategory.deleteMany({where:{userId:req.userId}});
     await prisma.userCategory.createMany({
