@@ -38,6 +38,7 @@ app.listen(port,()=>{
     console.log("App started");
 });
 
+
 // Schedule scraper to run every morning at 8:00 AM (server time)
 cron.schedule("0 8 * * *", () => {
   console.log("Running scheduled daily tender scraper...");
