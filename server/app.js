@@ -9,10 +9,13 @@ import runScraper from "./scripts/scraper.js";
 import authRoute from "./routes/auth.js";
 import catRoute from "./routes/categories.js";
 import tenderRoute from "./routes/tenders.js";
+import {authLimiter,scraperLimiter,apiLimiter} from "./middlewares/rateLimiter.js"
 
 const port = process.env.PORT || 8000;
 
 const app=express();
+
+app.set("trust proxy", 1);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -38,6 +41,7 @@ app.listen(port,()=>{
     console.log("App started");
 });
 
+
 // Schedule scraper to run every morning at 8:00 AM (server time)
 cron.schedule("0 8 * * *", () => {
   console.log("Running scheduled daily tender scraper...");
@@ -51,7 +55,7 @@ app.get("/",(req,res)=>{
 });
 
 // Endpoint triggered by cron-job.org
-app.get("/api/cron/scrape", async (req, res) => {
+app.get("/api/cron/scrape",scraperLimiter, async (req, res) => {
   console.log("⏰ Triggering scraper via external cron job...");
   try {
     await runScraper();
@@ -62,6 +66,6 @@ app.get("/api/cron/scrape", async (req, res) => {
   }
 });
 
-app.use("/api/auth",authRoute);
-app.use('/api/categories', catRoute);
-app.use('/api/tenders', tenderRoute);
+app.use("/api/auth",authLimiter,authRoute);
+app.use('/api/categories',apiLimiter, catRoute);
+app.use('/api/tenders',apiLimiter, tenderRoute);

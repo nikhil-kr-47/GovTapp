@@ -58,3 +58,21 @@ jobs:
 
       - name: Build
         run: npm run build   
+
+  deploy:
+    name: Deploy to production
+    needs: [client, server]
+    runs-on: ubuntu-latest
+
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+        - name: Deploy Backend to Render
+          run: |
+            echo "🚀 Triggering Render backend deployment..."
+            curl -s -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
+
+        - name: Deploy Frontend to Vercel
+          run: |
+            echo "🚀 Triggering Vercel frontend deployment..."
+            curl -s -X POST "${{ secrets.VERCEL_DEPLOY_HOOK }}"
