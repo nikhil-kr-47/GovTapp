@@ -60,8 +60,12 @@ function Categories() {
       await api.post("/categories/select", { catIds: selected });
       navigate("/dashboard");
     } catch (err) {
-        console.log(err);
-      alert("Failed saving preferences. Please try again.");
+      console.error("Failed saving preferences:", err);
+      const message =
+        err.response?.data?.error ||
+        err.response?.data?.message ||
+        "Failed saving preferences. Please try again.";
+      alert(message);
     } finally {
       setSaving(false);
     }
