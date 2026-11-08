@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import Landing from "./pages/landing";
 import Signup from "./pages/signup";
 import Login from "./pages/login";
 import Categories from "./pages/categories";
@@ -13,7 +14,7 @@ function App() {
         <Navbar />
         <main className="flex-1">
           <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/" element={<Landing />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/login" element={<Login />} />
             <Route

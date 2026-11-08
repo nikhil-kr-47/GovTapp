@@ -11,10 +11,10 @@ function Navbar(){
     };
 
     return (
-    <nav className="bg-slate-900 text-white px-8 py-4 flex justify-between items-center shadow-md mb-6">
+    <nav className="bg-slate-900 text-white px-8 py-4 flex justify-between items-center shadow-md border-b border-slate-800">
       {/* Brand / Logo */}
       <Link 
-        to={token ? "/dashboard" : "/login"} 
+        to={token ? "/dashboard" : "/"} 
         className="text-xl font-bold tracking-wide flex items-center gap-2 hover:text-blue-400 transition"
       >
         <span>🏛️</span>
