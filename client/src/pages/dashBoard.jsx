@@ -74,7 +74,12 @@ function Dashboard() {
     api
       .get("/tenders/matching")
       .then((res) => {
-        setTenders(res.data);
+        const currentTime = Date.now();
+        const activeOnly = res.data.filter((t) => {
+          if (!t.deadline) return true;
+          return new Date(t.deadline).getTime() >= currentTime;
+        });
+        setTenders(activeOnly);
       })
       .catch((err) => {
         console.error("Failed fetching tenders:", err);
@@ -82,14 +87,8 @@ function Dashboard() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Filter out any expired tenders
-  const activeTenders = tenders.filter((t) => {
-    if (!t.deadline) return true;
-    return new Date(t.deadline).getTime() >= Date.now();
-  });
-
   // Filter active tenders matching the search query
-  const filteredTenders = activeTenders.filter((t) => {
+  const filteredTenders = tenders.filter((t) => {
     const q = search.toLowerCase();
     return (
       t.title.toLowerCase().includes(q) ||
