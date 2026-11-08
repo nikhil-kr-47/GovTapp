@@ -15,16 +15,27 @@ router.get("/matching",requiresAuth,wrapAsync(async(req,res,next)=>{
       return res.json(cachedTenders);
    }
    
-
    const userCategories=await prisma.userCategory.findMany({where:{userId:req.userId}});
    const catIds=userCategories.map(uc=>uc.categoryId);
-   const tenders=await prisma.tender.findMany({where:{categoryId:{in:catIds}},
-    include: { category: true },
-     orderBy:{scrapedAt:'desc'}
 
+   const now = new Date();
+   const tenders=await prisma.tender.findMany({
+     where:{
+       categoryId:{in:catIds},
+       OR: [
+         { deadline: { gte: now } },
+         { deadline: null } // Include tenders if portal has not specified deadline
+       ]
+     },
+     include: { category: true },
+     orderBy:[
+       { deadline: 'asc' }, // Soonest closing tenders appear first
+       { scrapedAt: 'desc' }
+     ]
    });
 
-   await redis.set(cacheKey, tenders, {ex: 3600});
+   // Cache for 5 minutes (300 seconds) so active feed stays fresh
+   await redis.set(cacheKey, tenders, {ex: 300});
 
    res.json(tenders);
 }));
