@@ -2,6 +2,69 @@ import api from "../api.js";
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 
+// Helper to format deadline and calculate remaining time
+function formatDeadline(deadlineStr) {
+  if (!deadlineStr) {
+    return {
+      text: "Refer to portal",
+      badge: null,
+      isExpired: false,
+    };
+  }
+
+  const deadline = new Date(deadlineStr);
+  const now = new Date();
+  const diffMs = deadline.getTime() - now.getTime();
+
+  if (diffMs <= 0) {
+    return {
+      text: "Expired",
+      badge: "Expired",
+      isExpired: true,
+    };
+  }
+
+  const diffHours = Math.round(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+  const dateFormatted = deadline.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+
+  const timeFormatted = deadline.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  if (diffHours <= 24) {
+    return {
+      text: `${dateFormatted} at ${timeFormatted}`,
+      badge: "🔥 Closes Today",
+      urgency: "urgent",
+      isExpired: false,
+    };
+  }
+
+  if (diffDays === 1) {
+    return {
+      text: `${dateFormatted} at ${timeFormatted}`,
+      badge: "⚡ Closes Tomorrow",
+      urgency: "urgent",
+      isExpired: false,
+    };
+  }
+
+  return {
+    text: `${dateFormatted}`,
+    badge: `⏳ ${diffDays} days left`,
+    urgency: "normal",
+    isExpired: false,
+  };
+}
+
 function Dashboard() {
   const [tenders, setTenders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -19,8 +82,14 @@ function Dashboard() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Filter tenders matching the search query
-  const filteredTenders = tenders.filter((t) => {
+  // Filter out any expired tenders
+  const activeTenders = tenders.filter((t) => {
+    if (!t.deadline) return true;
+    return new Date(t.deadline).getTime() >= Date.now();
+  });
+
+  // Filter active tenders matching the search query
+  const filteredTenders = activeTenders.filter((t) => {
     const q = search.toLowerCase();
     return (
       t.title.toLowerCase().includes(q) ||
@@ -144,25 +213,41 @@ function Dashboard() {
               </div>
 
               {/* Card Footer: Deadline & Direct Portal Link */}
-              <div className="pt-3.5 border-t border-slate-100 flex items-center justify-between text-xs">
-                <span className="text-slate-500 flex items-center gap-1">
-                  <span>📅</span>
-                  <span>
-                    Deadline:{" "}
-                    <strong className="text-slate-700">
-                      {t.deadline
-                        ? new Date(t.deadline).toLocaleDateString()
-                        : "Refer to portal"}
-                    </strong>
-                  </span>
-                </span>
+              <div className="pt-3.5 border-t border-slate-100 flex items-center justify-between text-xs gap-2">
+                {(() => {
+                  const dInfo = formatDeadline(t.deadline);
+                  return (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-slate-500 flex items-center gap-1">
+                        <span>📅</span>
+                        <span>
+                          Deadline:{" "}
+                          <strong className="text-slate-700">
+                            {dInfo.text}
+                          </strong>
+                        </span>
+                      </span>
+                      {dInfo.badge && (
+                        <span
+                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                            dInfo.urgency === "urgent"
+                              ? "bg-amber-50 text-amber-700 border-amber-200"
+                              : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          }`}
+                        >
+                          {dInfo.badge}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {t.sourceUrl && (
                   <a
                     href={t.sourceUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 hover:underline transition"
+                    className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 hover:underline transition shrink-0"
                   >
                     View Portal ↗
                   </a>
