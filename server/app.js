@@ -54,12 +54,21 @@ app.get("/",(req,res)=>{
     res.send("App is listening");
 });
 
-// Endpoint triggered by cron-job.org
-app.get("/api/cron/scrape",scraperLimiter, async (req, res) => {
+// Endpoint triggered by cron-job.org or monitoring
+app.get("/api/cron/scrape", scraperLimiter, async (req, res) => {
   console.log("⏰ Triggering scraper via external cron job...");
   try {
-    await runScraper();
-    res.json({ message: "Scraper executed successfully!" });
+    const stats = await runScraper();
+    if (!stats.success) {
+      return res.status(502).json({
+        message: "Scraper execution failed (possible portal block or network error)",
+        stats,
+      });
+    }
+    res.json({
+      message: "Scraper executed successfully!",
+      stats,
+    });
   } catch (err) {
     console.error("Scraper failed:", err);
     res.status(500).json({ error: err.message });
