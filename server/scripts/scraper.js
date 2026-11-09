@@ -5,15 +5,22 @@ import { prisma } from "../lib/prisma.js";
 import sendAlert from '../utils/sendAlert.js';
 
 
-// Target pages from eprocure.gov.in (no CAPTCHA required)
+// Target sources from eprocure.gov.in (no CAPTCHA required)
 const TARGET_SOURCES = [
   {
-    name: 'Tenders by Closing Date',
-    url: 'https://eprocure.gov.in/epublish/app?page=FrontEndListTendersbyDate&service=page',
+    name: 'eProcure Main Active Tenders',
+    url: 'https://eprocure.gov.in/eprocure/app',
+    parser: 'activeTendersTable',
   },
   {
-    name: 'Latest Active Tenders',
-    url: 'https://eprocure.gov.in/epublish/app?page=FrontEndLatestActiveTenders&service=page',
+    name: 'ePublish Active Tenders',
+    url: 'https://eprocure.gov.in/epublish/app',
+    parser: 'activeTendersTable',
+  },
+  {
+    name: 'Tenders Closing Today',
+    url: 'https://eprocure.gov.in/epublish/app?page=FrontEndListTendersbyDate&service=page',
+    parser: 'listTable',
   },
 ];
 
@@ -25,13 +32,14 @@ function resolveFetchUrl(targetUrl) {
   return targetUrl;
 }
 
-async function scrapeSinglePage(targetUrl) {
-  const fetchUrl = resolveFetchUrl(targetUrl);
+async function scrapeSource(source) {
+  const fetchUrl = resolveFetchUrl(source.url);
   if (process.env.SCRAPER_API_KEY) {
-    console.log(`[Proxy] Fetching via ScraperAPI (India IP): ${targetUrl}`);
+    console.log(`[Proxy] Fetching ${source.name} via ScraperAPI (India IP)`);
   } else {
-    console.log(`[Direct] Fetching directly: ${targetUrl}`);
+    console.log(`[Direct] Fetching ${source.name} directly`);
   }
+
   const { data } = await axios.get(fetchUrl, {
     timeout: 30000,
     headers: {
@@ -45,38 +53,59 @@ async function scrapeSinglePage(targetUrl) {
   const $ = cheerio.load(data);
   const tenders = [];
 
-  // Loop through every row in the tender table
-  $('table.list_table tr').each((i, row) => {
-    const cells = $(row).find('td');
+  if (source.parser === 'activeTendersTable') {
+    // Parses the activeTenders table on eprocure/app & epublish/app homepages (Deadlines are 1-4 weeks out)
+    $('#activeTenders tr').each((i, row) => {
+      const cells = $(row).find('td');
+      if (cells.length < 3) return;
 
-    // Skip header rows or empty state rows
-    if (cells.length < 5) return;
+      const titleLink = $(cells[0]).find('a').attr('href');
+      const cleanTitle = $(cells[0]).text().replace(/^\d+\.\s*/, '').trim();
+      const referenceNo = $(cells[1]).text().trim();
+      const deadlineText = $(cells[2]).text().trim();
 
-    // Title + Reference No sit in cell 4 wrapped in brackets: [Title] [RefNo] [TenderID]
-    const titleCellText = $(cells[4]).text().trim();
-    const titleLink = $(cells[4]).find('a').attr('href');
+      if (cleanTitle && referenceNo) {
+        tenders.push({
+          title: cleanTitle,
+          referenceNo,
+          deadlineText,
+          department: referenceNo.split('/')[0] || 'Central Government',
+          sourceUrl: titleLink
+            ? (titleLink.startsWith('http') ? titleLink : `https://eprocure.gov.in${titleLink}`)
+            : source.url,
+        });
+      }
+    });
+  } else if (source.parser === 'listTable') {
+    // Parses standard list_table rows from FrontEndListTendersbyDate
+    $('table.list_table tr').each((i, row) => {
+      const cells = $(row).find('td');
+      if (cells.length < 5) return;
 
-    const matches = [...titleCellText.matchAll(/\[(.*?)\]/gs)].map(m => m[1].trim());
-    if (matches.length < 2) return; // Skip header row ("Title and Ref.No./Tender ID")
+      const titleCellText = $(cells[4]).text().trim();
+      const titleLink = $(cells[4]).find('a').attr('href');
 
-    const cleanTitle = matches[0];
-    const referenceNo = matches[1] || matches[2];
+      const matches = [...titleCellText.matchAll(/\[(.*?)\]/gs)].map(m => m[1].trim());
+      if (matches.length < 2) return;
 
-    const deadlineText = $(cells[2]).text().trim(); // Bid Submission Closing Date
-    const department = $(cells[5]).text().trim();   // Organisation Chain
+      const cleanTitle = matches[0];
+      const referenceNo = matches[1] || matches[2];
+      const deadlineText = $(cells[2]).text().trim();
+      const department = $(cells[5]).text().trim();
 
-    if (cleanTitle && referenceNo) {
-      tenders.push({
-        title: cleanTitle,
-        referenceNo,
-        deadlineText,
-        department,
-        sourceUrl: titleLink
-          ? `https://eprocure.gov.in${titleLink}`
-          : targetUrl,
-      });
-    }
-  });
+      if (cleanTitle && referenceNo) {
+        tenders.push({
+          title: cleanTitle,
+          referenceNo,
+          deadlineText,
+          department,
+          sourceUrl: titleLink
+            ? (titleLink.startsWith('http') ? titleLink : `https://eprocure.gov.in${titleLink}`)
+            : source.url,
+        });
+      }
+    });
+  }
 
   return tenders;
 }
@@ -88,7 +117,7 @@ async function scrapeTenders() {
   for (const source of TARGET_SOURCES) {
     try {
       console.log(`Scraping source: ${source.name}...`);
-      const items = await scrapeSinglePage(source.url);
+      const items = await scrapeSource(source);
       console.log(`  Found ${items.length} raw tenders on ${source.name}`);
       for (const item of items) {
         if (item.referenceNo && !seenRefs.has(item.referenceNo)) {
@@ -106,21 +135,21 @@ async function scrapeTenders() {
 
 // Keyword-based category matcher
 function getCategoryForTender(tender, categoryMap) {
-  const text = `${tender.title} ${tender.department}`.toLowerCase();
+  const text = `${tender.title} ${tender.department} ${tender.referenceNo}`.toLowerCase();
 
-  if (text.includes("defence") || text.includes("defense") || text.includes("ordnance") || text.includes("air force") || text.includes("gun") || text.includes("space")) {
+  if (text.includes("defence") || text.includes("defense") || text.includes("ordnance") || text.includes("air force") || text.includes("gun") || text.includes("space") || text.includes("navy") || text.includes("naval") || text.includes("missile") || text.includes("drdo") || text.includes("bsf") || text.includes("radar") || text.includes("oven") || text.includes("shar")) {
     return categoryMap["Defense & Aerospace"];
   }
-  if (text.includes("rail") || text.includes("siding") || text.includes("container") || text.includes("jnpt") || text.includes("fmlm") || text.includes("transport")) {
+  if (text.includes("rail") || text.includes("siding") || text.includes("container") || text.includes("jnpt") || text.includes("fmlm") || text.includes("transport") || text.includes("port") || text.includes("ship") || text.includes("tug") || text.includes("fender") || text.includes("dock") || text.includes("csl") || text.includes("bollard")) {
     return categoryMap["Railways & Transport"];
   }
-  if (text.includes("electric") || text.includes("light") || text.includes("voltage") || text.includes("wire") || text.includes("led") || text.includes("power") || text.includes("solar")) {
+  if (text.includes("electric") || text.includes("light") || text.includes("voltage") || text.includes("wire") || text.includes("led") || text.includes("power") || text.includes("solar") || text.includes("dg set") || text.includes("generator") || text.includes("battery") || text.includes("transformer") || text.includes("vrf") || text.includes("furnace")) {
     return categoryMap["Electrical & Electronics"];
   }
-  if (text.includes("hospital") || text.includes("medical") || text.includes("health") || text.includes("pump") || text.includes("acetone") || text.includes("pharma")) {
+  if (text.includes("hospital") || text.includes("medical") || text.includes("health") || text.includes("pump") || text.includes("acetone") || text.includes("pharma") || text.includes("medicine") || text.includes("microscope") || text.includes("surgical") || text.includes("biotech") || text.includes("aiims") || text.includes("water supply") || text.includes("drinking water")) {
     return categoryMap["Healthcare & Medical Supplies"];
   }
-  if (text.includes("software") || text.includes("computer") || text.includes("information technology") || text.includes("cyber") || text.includes("cloud")) {
+  if (text.includes("software") || text.includes("computer") || text.includes("information technology") || text.includes("cyber") || text.includes("cloud") || text.includes("server") || text.includes("hardware") || text.includes("laptop") || text.includes("amc") || text.includes("data") || text.includes("circuit") || text.includes("laser") || text.includes("radiometer") || text.includes("actuator") || text.includes("it/")) {
     return categoryMap["Information Technology & Software"];
   }
   return categoryMap["Civil Construction"] || Object.values(categoryMap)[0];
