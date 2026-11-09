@@ -18,9 +18,16 @@ const TARGET_SOURCES = [
     parser: 'activeTendersTable',
   },
   {
-    name: 'Tenders Closing Today',
+    name: 'eProcure Main Paginated Tenders',
+    url: 'https://eprocure.gov.in/eprocure/app?page=FrontEndListTendersbyDate&service=page',
+    parser: 'paginatedListTable',
+    maxPages: 6,
+  },
+  {
+    name: 'ePublish Paginated Tenders',
     url: 'https://eprocure.gov.in/epublish/app?page=FrontEndListTendersbyDate&service=page',
-    parser: 'listTable',
+    parser: 'paginatedListTable',
+    maxPages: 4,
   },
 ];
 
@@ -32,6 +39,38 @@ function resolveFetchUrl(targetUrl) {
   return targetUrl;
 }
 
+function parseListTableRows($, baseUrl) {
+  const tenders = [];
+  $('table.list_table tr').each((i, row) => {
+    const cells = $(row).find('td');
+    if (cells.length < 5) return;
+
+    const titleCellText = $(cells[4]).text().trim();
+    const titleLink = $(cells[4]).find('a').attr('href');
+
+    const matches = [...titleCellText.matchAll(/\[(.*?)\]/gs)].map(m => m[1].trim());
+    if (matches.length < 2) return;
+
+    const cleanTitle = matches[0];
+    const referenceNo = matches[1] || matches[2];
+    const deadlineText = $(cells[2]).text().trim();
+    const department = $(cells[5]).text().trim();
+
+    if (cleanTitle && referenceNo) {
+      tenders.push({
+        title: cleanTitle,
+        referenceNo,
+        deadlineText,
+        department: department || 'Central Government',
+        sourceUrl: titleLink
+          ? (titleLink.startsWith('http') ? titleLink : `https://eprocure.gov.in${titleLink}`)
+          : baseUrl,
+      });
+    }
+  });
+  return tenders;
+}
+
 async function scrapeSource(source) {
   const fetchUrl = resolveFetchUrl(source.url);
   if (process.env.SCRAPER_API_KEY) {
@@ -40,17 +79,19 @@ async function scrapeSource(source) {
     console.log(`[Direct] Fetching ${source.name} directly`);
   }
 
-  const { data } = await axios.get(fetchUrl, {
+  const baseHeaders = {
+    'User-Agent':
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+  };
+
+  const res = await axios.get(fetchUrl, {
     timeout: 30000,
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.9',
-    },
+    headers: baseHeaders,
   });
 
-  const $ = cheerio.load(data);
+  const $ = cheerio.load(res.data);
   const tenders = [];
 
   if (source.parser === 'activeTendersTable') {
@@ -76,35 +117,43 @@ async function scrapeSource(source) {
         });
       }
     });
-  } else if (source.parser === 'listTable') {
-    // Parses standard list_table rows from FrontEndListTendersbyDate
-    $('table.list_table tr').each((i, row) => {
-      const cells = $(row).find('td');
-      if (cells.length < 5) return;
+  } else if (source.parser === 'paginatedListTable') {
+    // 1. Parse page 1
+    const p1Tenders = parseListTableRows($, source.url);
+    tenders.push(...p1Tenders);
 
-      const titleCellText = $(cells[4]).text().trim();
-      const titleLink = $(cells[4]).find('a').attr('href');
+    // 2. Discover pagination links
+    const cookies = res.headers['set-cookie']
+      ? res.headers['set-cookie'].map(c => c.split(';')[0]).join('; ')
+      : '';
 
-      const matches = [...titleCellText.matchAll(/\[(.*?)\]/gs)].map(m => m[1].trim());
-      if (matches.length < 2) return;
-
-      const cleanTitle = matches[0];
-      const referenceNo = matches[1] || matches[2];
-      const deadlineText = $(cells[2]).text().trim();
-      const department = $(cells[5]).text().trim();
-
-      if (cleanTitle && referenceNo) {
-        tenders.push({
-          title: cleanTitle,
-          referenceNo,
-          deadlineText,
-          department,
-          sourceUrl: titleLink
-            ? (titleLink.startsWith('http') ? titleLink : `https://eprocure.gov.in${titleLink}`)
-            : source.url,
-        });
+    const pageLinks = [];
+    $('table.list_table tr').last().find('a').each((i, a) => {
+      const text = $(a).text().trim();
+      const href = $(a).attr('href');
+      if (/^\d+$/.test(text) && href) {
+        pageLinks.push({ pageNum: parseInt(text, 10), url: `https://eprocure.gov.in${href}` });
       }
     });
+
+    const maxPagesToScrape = source.maxPages || 4;
+    const pagesToFetch = pageLinks.filter(p => p.pageNum <= maxPagesToScrape);
+
+    for (const pl of pagesToFetch) {
+      try {
+        const nextUrl = resolveFetchUrl(pl.url);
+        const nextRes = await axios.get(nextUrl, {
+          timeout: 30000,
+          headers: { ...baseHeaders, Cookie: cookies },
+        });
+        const $next = cheerio.load(nextRes.data);
+        const pageTenders = parseListTableRows($next, source.url);
+        console.log(`    Parsed ${pageTenders.length} tenders from page ${pl.pageNum} of ${source.name}`);
+        tenders.push(...pageTenders);
+      } catch (pageErr) {
+        console.warn(`    Failed scraping page ${pl.pageNum} of ${source.name}:`, pageErr.message);
+      }
+    }
   }
 
   return tenders;
@@ -204,6 +253,13 @@ async function runScraper() {
         if (!isNaN(parsed.getTime())) {
           deadline = parsed;
         }
+      }
+
+      // Safeguard: Skip any tender that has already expired
+      if (deadline && deadline.getTime() < Date.now()) {
+        stats.duplicatesSkipped++;
+        console.log(`[EXPIRED SKIP] Ref: ${tender.referenceNo} deadline "${tender.deadlineText}" has already passed.`);
+        continue;
       }
 
       const saved = await prisma.tender.create({
