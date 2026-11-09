@@ -1,0 +1,32 @@
+name: Daily Tender Scraper
+
+on:
+  schedule:
+    # Runs every day at 02:30 UTC = 08:00 AM IST
+    - cron: '30 2 * * *'
+  # Allows triggering manually from the GitHub Actions tab anytime
+  workflow_dispatch:
+
+jobs:
+  scrape-tenders:
+    name: Trigger Scraper on Render
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger Daily Scrape Endpoint
+        run: |
+          echo "⏰ Sending wake-up & scrape trigger to Render..."
+          # -m 120 gives Render up to 2 minutes to spin up from cold sleep
+          RESPONSE=$(curl -s -m 120 -w "\nHTTP_STATUS:%{http_code}" "https://govtapp.onrender.com/api/cron/scrape")
+          HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS" | cut -d':' -f2)
+          BODY=$(echo "$RESPONSE" | sed -e 's/HTTP_STATUS:.*//g')
+
+          echo "Response Body: $BODY"
+          echo "HTTP Status: $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "❌ Scraper trigger failed with HTTP status $HTTP_STATUS"
+            exit 1
+          fi
+
+          echo "✅ Daily tender scrape completed successfully!"
