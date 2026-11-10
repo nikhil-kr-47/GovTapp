@@ -3,18 +3,20 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-// 1. Initialize the Gemini client
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-});
-
 /**
  * Generates a concise, structured 3-bullet summary of a tender.
  * @param {Object} tender - Tender details from database
  * @returns {Promise<string>} - The AI-generated summary
  */
 export async function summarizeTender(tender) {
-  // 2. Build the prompt with context
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY is not set in the server environment variables.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  // Build the prompt with context
   const prompt = `
 You are an expert procurement analyst for Indian government tenders.
 Summarize the following tender clearly for business owners and contractors.
@@ -23,7 +25,7 @@ Tender Details:
 - Title: ${tender.title}
 - Department / Organisation: ${tender.department || "Not specified"}
 - Reference Number: ${tender.referenceNo || "Not specified"}
-- Category: ${tender.category || "General"}
+- Category: ${tender.category?.name || tender.category || "General"}
 - Deadline: ${tender.deadline ? new Date(tender.deadline).toDateString() : "Not specified"}
 
 Format Requirements:
@@ -35,11 +37,24 @@ Format Requirements:
 - Use plain, professional English. Do not invent details not present in the input.
 `;
 
-  // 3. Request generation from Gemini 1.5 Flash
-  const response = await ai.models.generateContent({
-    model: "gemini-1.5-flash",
-    contents: prompt,
-  });
+  // Try current Google Gemini production models (gemini-2.5-flash / gemini-2.0-flash)
+  const candidateModels = ["gemini-2.5-flash", "gemini-2.0-flash"];
+  let lastError;
 
-  return response.text.trim();
+  for (const model of candidateModels) {
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: prompt,
+      });
+      if (response && response.text) {
+        return response.text.trim();
+      }
+    } catch (err) {
+      lastError = err;
+      console.warn(`Model ${model} attempt failed, trying fallback:`, err.message);
+    }
+  }
+
+  throw lastError;
 }
