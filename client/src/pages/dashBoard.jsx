@@ -69,10 +69,13 @@ function Dashboard() {
   const [tenders, setTenders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [activeTab, setActiveTab] = useState("all"); // "all" | "saved"
+  const [savedIds, setSavedIds] = useState(new Set());
   const [summarizingId, setSummarizingId] = useState(null);
   const [expandedSummaries, setExpandedSummaries] = useState({});
 
   useEffect(() => {
+    // 1. Fetch matching active tenders
     api
       .get("/tenders/matching")
       .then((res) => {
@@ -87,7 +90,43 @@ function Dashboard() {
         console.error("Failed fetching tenders:", err);
       })
       .finally(() => setLoading(false));
+
+    // 2. Fetch user's saved tender IDs for instant bookmark state
+    api
+      .get("/tenders/saved/ids")
+      .then((res) => {
+        setSavedIds(new Set(res.data));
+      })
+      .catch((err) => {
+        console.error("Failed fetching saved IDs:", err);
+      });
   }, []);
+
+  // Handle bookmarking/saving tender with optimistic UI update
+  const handleToggleSave = async (tenderId) => {
+    const isCurrentlySaved = savedIds.has(tenderId);
+
+    // Optimistic UI state
+    setSavedIds((prev) => {
+      const next = new Set(prev);
+      if (isCurrentlySaved) next.delete(tenderId);
+      else next.add(tenderId);
+      return next;
+    });
+
+    try {
+      await api.post(`/tenders/${tenderId}/save`);
+    } catch (err) {
+      console.error("Failed saving tender:", err);
+      // Rollback on network failure
+      setSavedIds((prev) => {
+        const next = new Set(prev);
+        if (isCurrentlySaved) next.add(tenderId);
+        else next.delete(tenderId);
+        return next;
+      });
+    }
+  };
 
   // Handle generating or toggling AI summary
   const handleSummarize = async (tenderId) => {
@@ -141,6 +180,14 @@ function Dashboard() {
     );
   });
 
+  // Apply tab filter: "all" vs "saved"
+  const displayedTenders = filteredTenders.filter((t) => {
+    if (activeTab === "saved") {
+      return savedIds.has(t.id);
+    }
+    return true;
+  });
+
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto px-6 py-20 text-center">
@@ -154,7 +201,7 @@ function Dashboard() {
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
-      {/* Header & Search Bar */}
+      {/* Header, Tab Switcher & Search Bar */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8 pb-6 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -165,9 +212,34 @@ function Dashboard() {
               {filteredTenders.length} Active
             </span>
           </div>
-          <p className="text-slate-500 text-xs">
+          <p className="text-slate-500 text-xs mb-3">
             Live tenders scraped from eprocure.gov.in matching your selected industries.
           </p>
+
+          {/* Tab Switcher: All Tenders vs Saved Watchlist */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveTab("all")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                activeTab === "all"
+                  ? "bg-slate-900 text-white shadow-xs"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              All Tenders ({filteredTenders.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("saved")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer ${
+                activeTab === "saved"
+                  ? "bg-amber-500 text-white shadow-xs"
+                  : "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
+              }`}
+            >
+              <span>⭐</span>
+              <span>Saved Watchlist ({savedIds.size})</span>
+            </button>
+          </div>
         </div>
 
         {/* Search Input */}
@@ -194,18 +266,31 @@ function Dashboard() {
       </div>
 
       {/* Empty State */}
-      {filteredTenders.length === 0 ? (
+      {displayedTenders.length === 0 ? (
         <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center max-w-lg mx-auto shadow-sm">
-          <div className="text-4xl mb-3">📭</div>
+          <div className="text-4xl mb-3">{activeTab === "saved" ? "⭐" : "📭"}</div>
           <h3 className="text-base font-semibold text-slate-800 mb-1">
-            {search ? "No tenders found" : "No matching tenders yet"}
+            {activeTab === "saved"
+              ? "No saved tenders yet"
+              : search
+              ? "No tenders found"
+              : "No matching tenders yet"}
           </h3>
           <p className="text-slate-500 text-xs mb-6">
-            {search
+            {activeTab === "saved"
+              ? "Click the '☆ Save' button on any tender card to bookmark it to your watchlist for quick access."
+              : search
               ? `No tenders match "${search}". Try searching a different keyword.`
               : "We haven't found tenders for your currently selected categories yet."}
           </p>
-          {search ? (
+          {activeTab === "saved" ? (
+            <button
+              onClick={() => setActiveTab("all")}
+              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg transition"
+            >
+              Browse All Tenders
+            </button>
+          ) : search ? (
             <button
               onClick={() => setSearch("")}
               className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition"
@@ -224,22 +309,36 @@ function Dashboard() {
       ) : (
         /* Tenders Grid */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {filteredTenders.map((t) => (
+          {displayedTenders.map((t) => (
             <div
               key={t.id}
               className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md hover:border-slate-300 transition flex flex-col justify-between"
             >
               <div>
-                {/* Reference Number & Category Tag */}
+                {/* Reference Number & Category Tag & Save Bookmark */}
                 <div className="flex items-center justify-between gap-2 mb-3">
                   <span className="bg-slate-100 text-slate-700 font-mono text-xs px-2.5 py-1 rounded font-medium">
                     {t.referenceNo}
                   </span>
-                  {t.category?.name && (
-                    <span className="bg-blue-50 text-blue-700 text-[11px] font-medium px-2.5 py-0.5 rounded-full border border-blue-200">
-                      {t.category.name}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {t.category?.name && (
+                      <span className="bg-blue-50 text-blue-700 text-[11px] font-medium px-2.5 py-0.5 rounded-full border border-blue-200">
+                        {t.category.name}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => handleToggleSave(t.id)}
+                      title={savedIds.has(t.id) ? "Remove from Saved" : "Save Tender"}
+                      className={`text-xs px-2.5 py-0.5 rounded-full border transition flex items-center gap-1 cursor-pointer ${
+                        savedIds.has(t.id)
+                          ? "bg-amber-50 text-amber-700 border-amber-300 font-semibold"
+                          : "bg-slate-50 text-slate-400 border-slate-200 hover:text-slate-700 hover:border-slate-300"
+                      }`}
+                    >
+                      <span>{savedIds.has(t.id) ? "★" : "☆"}</span>
+                      <span>{savedIds.has(t.id) ? "Saved" : "Save"}</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Tender Title */}

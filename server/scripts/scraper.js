@@ -221,6 +221,22 @@ async function runScraper() {
     stats.scraped = tenders.length;
     console.log(`Total unique scraped tenders from eprocure: ${tenders.length}`);
 
+    // Automatic house-keeping: Purge expired saved tender bookmarks from DB
+    try {
+      const expiredCleanup = await prisma.savedTender.deleteMany({
+        where: {
+          tender: {
+            deadline: { lt: new Date() }
+          }
+        }
+      });
+      if (expiredCleanup.count > 0) {
+        console.log(`[CLEANUP] Automatically purged ${expiredCleanup.count} expired saved tender bookmarks.`);
+      }
+    } catch (cleanupErr) {
+      console.warn("Expired saved bookmarks cleanup failed:", cleanupErr.message);
+    }
+
     if (tenders.length === 0) {
       console.warn("No tenders could be parsed. This usually means the government portal blocked the IP or returned a challenge page.");
     }

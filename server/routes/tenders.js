@@ -41,6 +41,89 @@ router.get("/matching",requiresAuth,wrapAsync(async(req,res,next)=>{
    res.json(tenders);
 }));
 
+// GET /api/tenders/saved - Fetch all active saved tenders for logged-in user
+router.get("/saved", requiresAuth, wrapAsync(async (req, res) => {
+   const now = new Date();
+   const records = await prisma.savedTender.findMany({
+     where: { 
+       userId: req.userId,
+       tender: {
+         OR: [
+           { deadline: { gte: now } },
+           { deadline: null } // Include tenders without strict deadline
+         ]
+       }
+     },
+     include: {
+       tender: {
+         include: { category: true }
+       }
+     },
+     orderBy: { savedAt: "desc" }
+   });
+
+   const savedTenders = records.map(r => ({
+     ...r.tender,
+     savedAt: r.savedAt,
+     isSaved: true
+   }));
+
+   res.json(savedTenders);
+}));
+
+// GET /api/tenders/saved/ids - Lightweight list of active saved IDs for fast icon matching
+router.get("/saved/ids", requiresAuth, wrapAsync(async (req, res) => {
+   const now = new Date();
+   const records = await prisma.savedTender.findMany({
+     where: { 
+       userId: req.userId,
+       tender: {
+         OR: [
+           { deadline: { gte: now } },
+           { deadline: null }
+         ]
+       }
+     },
+     select: { tenderId: true }
+   });
+
+   res.json(records.map(r => r.tenderId));
+}));
+
+// POST /api/tenders/:id/save - Toggle bookmark for a tender
+router.post("/:id/save", requiresAuth, wrapAsync(async (req, res) => {
+   const { id: tenderId } = req.params;
+
+   const existing = await prisma.savedTender.findUnique({
+     where: {
+       userId_tenderId: {
+         userId: req.userId,
+         tenderId,
+       }
+     }
+   });
+
+   if (existing) {
+     await prisma.savedTender.delete({
+       where: {
+         userId_tenderId: {
+           userId: req.userId,
+           tenderId,
+         }
+       }
+     });
+     return res.json({ saved: false });
+   } else {
+     await prisma.savedTender.create({
+       data: {
+         userId: req.userId,
+         tenderId,
+       }
+     });
+     return res.json({ saved: true });
+   }
+}));
+
 // POST /api/tenders/:id/summarize
 // Generates or returns cached AI summary for a specific tender
 router.post("/:id/summarize", requiresAuth, wrapAsync(async (req, res) => {
