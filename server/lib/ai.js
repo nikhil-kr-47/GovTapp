@@ -37,8 +37,8 @@ Format Requirements:
 - Use plain, professional English. Do not invent details not present in the input.
 `;
 
-  // Google GenAI production models
-  const candidateModels = ["gemini-3.8-flash", "gemini-3.5-flash-lite"];
+  // Use Gemini 3.5 Flash-Lite (Fastest inference, 1.4s generation, highly reliable)
+  const candidateModels = ["gemini-3.5-flash-lite", "gemini-3.5-flash"];
   let lastError;
 
   for (const model of candidateModels) {
