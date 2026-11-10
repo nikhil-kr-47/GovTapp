@@ -46,4 +46,6 @@ model Tender{
   category Category? @relation(fields:[categoryId],references:[id])
   categoryId String?
   scrapedAt DateTime @default(now())
+
+  summary String?
 }

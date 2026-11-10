@@ -78,3 +78,9 @@ app.get("/api/cron/scrape", scraperLimiter, async (req, res) => {
 app.use("/api/auth",authLimiter,authRoute);
 app.use('/api/categories',apiLimiter, catRoute);
 app.use('/api/tenders',apiLimiter, tenderRoute);
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+  console.error("Server error:", err);
+  res.status(err.status || 500).json({ error: err.message || "Internal server error" });
+});

@@ -69,6 +69,8 @@ function Dashboard() {
   const [tenders, setTenders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [summarizingId, setSummarizingId] = useState(null);
+  const [expandedSummaries, setExpandedSummaries] = useState({});
 
   useEffect(() => {
     api
@@ -86,6 +88,47 @@ function Dashboard() {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  // Handle generating or toggling AI summary
+  const handleSummarize = async (tenderId) => {
+    const tender = tenders.find((t) => t.id === tenderId);
+    
+    // If summary is already cached in state, toggle visibility
+    if (tender?.summary) {
+      setExpandedSummaries((prev) => ({
+        ...prev,
+        [tenderId]: !prev[tenderId],
+      }));
+      return;
+    }
+
+    // Call backend API to generate summary
+    try {
+      setSummarizingId(tenderId);
+      const res = await api.post(`/tenders/${tenderId}/summarize`);
+
+      // Update tender with newly returned summary
+      setTenders((prev) =>
+        prev.map((t) =>
+          t.id === tenderId ? { ...t, summary: res.data.summary } : t
+        )
+      );
+
+      // Auto-expand the summary
+      setExpandedSummaries((prev) => ({
+        ...prev,
+        [tenderId]: true,
+      }));
+    } catch (err) {
+      console.error("Failed generating summary:", err);
+      alert(
+        err.response?.data?.error ||
+          "Could not generate AI summary at this moment. Please try again."
+      );
+    } finally {
+      setSummarizingId(null);
+    }
+  };
 
   // Filter active tenders matching the search query
   const filteredTenders = tenders.filter((t) => {
@@ -205,10 +248,54 @@ function Dashboard() {
                 </h2>
 
                 {/* Department */}
-                <p className="text-slate-500 text-xs mb-4 flex items-start gap-1.5 line-clamp-2">
+                <p className="text-slate-500 text-xs mb-3 flex items-start gap-1.5 line-clamp-2">
                   <span className="shrink-0">🏛️</span>
                   <span>{t.department}</span>
                 </p>
+
+                {/* AI Summary Section */}
+                <div className="mb-3">
+                  <button
+                    onClick={() => handleSummarize(t.id)}
+                    disabled={summarizingId === t.id}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition disabled:opacity-60 cursor-pointer"
+                  >
+                    {summarizingId === t.id ? (
+                      <>
+                        <span className="animate-spin text-xs">⚙️</span>
+                        <span>Analyzing tender...</span>
+                      </>
+                    ) : t.summary ? (
+                      <>
+                        <span>✨</span>
+                        <span>{expandedSummaries[t.id] ? "Hide Summary" : "View AI Summary"}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>✨</span>
+                        <span>Summarize with AI</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* Summary Box */}
+                  {expandedSummaries[t.id] && t.summary && (
+                    <div className="mt-2.5 p-3.5 bg-gradient-to-br from-indigo-50/70 via-blue-50/50 to-slate-50 border border-indigo-100 rounded-lg text-xs">
+                      <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-indigo-100/60">
+                        <span className="font-semibold text-indigo-900 flex items-center gap-1 text-[11px]">
+                          <span>🤖</span>
+                          <span>AI Intelligence Breakdown</span>
+                        </span>
+                        <span className="text-[10px] text-indigo-600 bg-indigo-100/70 px-1.5 py-0.5 rounded font-medium">
+                          Gemini 1.5
+                        </span>
+                      </div>
+                      <div className="whitespace-pre-line leading-relaxed text-slate-700 font-normal">
+                        {t.summary}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Card Footer: Deadline & Direct Portal Link */}
