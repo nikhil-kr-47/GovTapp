@@ -4,7 +4,7 @@ import wrapAsync from '../middlewares/wrapAsync.js';
 import requiresAuth from '../middlewares/auth.js';
 import {prisma} from '../lib/prisma.js';
 import redis from "../lib/redis.js";
-import { summarizeTender } from '../lib/ai.js';
+import { streamTenderSummary } from '../lib/ai.js';
 
 
 const router=express.Router();
@@ -139,31 +139,43 @@ router.post("/:id/summarize", requiresAuth, wrapAsync(async (req, res) => {
      return res.status(404).json({ error: "Tender not found" });
    }
 
-   // 2. Cache-aside check: If summary already exists in DB, return it instantly
+   res.setHeader("Content-Type", "text/event-stream");
+   res.setHeader("Cache-Control", "no-cache");
+   res.setHeader("Connection", "keep-alive");
+
+   
+   // 2. Cache-aside check: If summary already exists in DB, stream cached text instantly
    if (tender.summary) {
-     return res.json({
-       summary: tender.summary,
-       cached: true,
-     });
+     
+
+     res.write(`data: ${JSON.stringify({ text: tender.summary, cached: true })}\n\n`);
+     res.write(`data: ${JSON.stringify({ text: "[DONE]" })}\n\n`);
+     return res.end();
    }
 
-   // 3. Otherwise, generate summary using Gemini AI
-   const generatedSummary = await summarizeTender({
+   
+   // 3. Otherwise, generate summary using Gemini AI stream
+   const generatedSummary = await streamTenderSummary({
      ...tender,
      category: tender.category?.name || "General",
    });
 
+   let fullSummary = "";
+   for await (const chunk of generatedSummary) {
+     if (chunk.text) {
+       fullSummary += chunk.text; // Fixed: chunk.text instead of chunk (prevents "[object Object]")
+       res.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
+     }
+   }
+
    // 4. Persist summary into Neon DB so future requests cost $0 and take 0ms
-   const updated = await prisma.tender.update({
+   await prisma.tender.update({
      where: { id },
-     data: { summary: generatedSummary },
-     include: { category: true },
+     data: { summary: fullSummary.trim() },
    });
 
-   res.json({
-     summary: updated.summary,
-     cached: false,
-   });
+   res.write(`data: ${JSON.stringify({ text: "[DONE]" })}\n\n`);
+   res.end();
 }));
 
 export default router;

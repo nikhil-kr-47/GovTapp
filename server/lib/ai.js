@@ -8,7 +8,7 @@ dotenv.config();
  * @param {Object} tender - Tender details from database
  * @returns {Promise<string>} - The AI-generated summary
  */
-export async function summarizeTender(tender) {
+export async function streamTenderSummary(tender) {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY is not set in the server environment variables.");
@@ -43,12 +43,12 @@ Format Requirements:
 
   for (const model of candidateModels) {
     try {
-      const response = await ai.models.generateContent({
+      const responseStream = await ai.models.generateContentStream({
         model,
         contents: prompt,
       });
-      if (response && response.text) {
-        return response.text.trim();
+      if (responseStream) {
+        return responseStream;
       }
     } catch (err) {
       lastError = err;
@@ -58,3 +58,4 @@ Format Requirements:
 
   throw lastError;
 }
+

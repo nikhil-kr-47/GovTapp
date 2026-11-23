@@ -128,11 +128,11 @@ function Dashboard() {
     }
   };
 
-  // Handle generating or toggling AI summary
+  // Handle generating or toggling real-time AI summary stream
   const handleSummarize = async (tenderId) => {
     const tender = tenders.find((t) => t.id === tenderId);
     
-    // If summary is already cached in state, toggle visibility
+    // If summary is already cached in state, toggle visibility without network call
     if (tender?.summary) {
       setExpandedSummaries((prev) => ({
         ...prev,
@@ -141,29 +141,81 @@ function Dashboard() {
       return;
     }
 
-    // Call backend API to generate summary
+    // Call backend API to stream summary
     try {
       setSummarizingId(tenderId);
-      const res = await api.post(`/tenders/${tenderId}/summarize`);
 
-      // Update tender with newly returned summary
-      setTenders((prev) =>
-        prev.map((t) =>
-          t.id === tenderId ? { ...t, summary: res.data.summary } : t
-        )
-      );
-
-      // Auto-expand the summary
+      // 1. Immediately expand the card so user sees words streaming live
       setExpandedSummaries((prev) => ({
         ...prev,
         [tenderId]: true,
       }));
+
+      // Initialize empty summary in state so the card box renders immediately
+      setTenders((prev) =>
+        prev.map((t) => (t.id === tenderId ? { ...t, summary: "" } : t))
+      );
+
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+      const token = localStorage.getItem("token");
+
+      // 2. Call the streaming endpoint using native fetch
+      const res = await fetch(`${apiUrl}/tenders/${tenderId}/summarize`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server returned status ${res.status}`);
+      }
+
+      // 3. Attach stream reader & decoder
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulated = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const rawChunk = decoder.decode(value, { stream: true });
+        // Split by the SSE message delimiter "\n\n"
+        const lines = rawChunk.split("\n\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const jsonStr = line.replace("data: ", "").trim();
+            if (!jsonStr) continue;
+
+            try {
+              const parsed = JSON.parse(jsonStr);
+
+              // Check for official completion signal
+              if (parsed.text === "[DONE]") {
+                break;
+              }
+
+              if (parsed.text) {
+                accumulated += parsed.text;
+                // Live update React state as each token arrives!
+                setTenders((prev) =>
+                  prev.map((t) =>
+                    t.id === tenderId ? { ...t, summary: accumulated } : t
+                  )
+                );
+              }
+            } catch (e) {
+              // Partial JSON boundary - ignore
+            }
+          }
+        }
+      }
     } catch (err) {
       console.error("Failed generating summary:", err);
-      alert(
-        err.response?.data?.error ||
-          "Could not generate AI summary at this moment. Please try again."
-      );
+      alert("Could not generate AI summary at this moment. Please try again.");
     } finally {
       setSummarizingId(null);
     }
@@ -378,19 +430,25 @@ function Dashboard() {
                   </button>
 
                   {/* Summary Box */}
-                  {expandedSummaries[t.id] && t.summary && (
+                  {expandedSummaries[t.id] && (t.summary || summarizingId === t.id) && (
                     <div className="mt-2.5 p-3.5 bg-gradient-to-br from-indigo-50/70 via-blue-50/50 to-slate-50 border border-indigo-100 rounded-lg text-xs">
                       <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-indigo-100/60">
                         <span className="font-semibold text-indigo-900 flex items-center gap-1 text-[11px]">
                           <span>🤖</span>
                           <span>AI Intelligence Breakdown</span>
                         </span>
-                        <span className="text-[10px] text-indigo-600 bg-indigo-100/70 px-1.5 py-0.5 rounded font-medium">
-                          Gemini 1.5
+                        <span className="text-[10px] text-indigo-600 bg-indigo-100/70 px-1.5 py-0.5 rounded font-medium flex items-center gap-1">
+                          {summarizingId === t.id && (
+                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-600 animate-ping" />
+                          )}
+                          <span>Gemini 3.5</span>
                         </span>
                       </div>
                       <div className="whitespace-pre-line leading-relaxed text-slate-700 font-normal">
-                        {t.summary}
+                        {t.summary || "Connecting to AI stream..."}
+                        {summarizingId === t.id && (
+                          <span className="inline-block w-1.5 h-3 ml-0.5 bg-indigo-600 animate-pulse align-middle" />
+                        )}
                       </div>
                     </div>
                   )}
