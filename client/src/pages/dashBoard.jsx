@@ -207,7 +207,7 @@ function Dashboard() {
                   )
                 );
               }
-            } catch (e) {
+            } catch {
               // Partial JSON boundary - ignore
             }
           }
