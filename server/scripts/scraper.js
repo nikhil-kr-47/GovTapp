@@ -3,6 +3,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { prisma } from "../lib/prisma.js";
 import sendAlert from '../utils/sendAlert.js';
+import {generateEmbedding} from '../lib/ai.js';
 
 
 // Target sources from eprocure.gov.in (no CAPTCHA required)
@@ -288,6 +289,22 @@ async function runScraper() {
           deadline: deadline,
         },
       });
+
+      try{
+        const textToEmbed = `${saved.title} - ${saved.department || 'Central Government'}`;
+         const vectorValues = await generateEmbedding(textToEmbed);
+         const vectorString=JSON.stringify(vectorValues);
+
+         await prisma.$executeRaw`
+          UPDATE "Tender"
+          SET embedding = ${vectorString}::vector
+          WHERE id = ${saved.id}
+        `;
+         console.log(`[EMBEDDING SAVED] Ref: ${saved.referenceNo}`);
+
+      }catch(embErr){
+          console.warn(`[EMBEDDING FAILED] Ref: ${saved.referenceNo}:`, embErr.message);
+      }
 
       stats.newSaved++;
       stats.savedTenders.push({ id: saved.id, title: saved.title, referenceNo: saved.referenceNo });

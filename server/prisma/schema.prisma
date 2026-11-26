@@ -50,6 +50,7 @@ model Tender{
 
   summary String?
   savedTenders SavedTender[]
+  embedding Unsupported("vector(768)")?  //For the vector embedding
 }
 
 model SavedTender {

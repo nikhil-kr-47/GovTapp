@@ -3,19 +3,22 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+
+  const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+
+
 /**
  * Generates a concise, structured 3-bullet summary of a tender.
  * @param {Object} tender - Tender details from database
  * @returns {Promise<string>} - The AI-generated summary
  */
 export async function streamTenderSummary(tender) {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!apiKey) {
-    throw new Error("GEMINI_API_KEY is not set in the server environment variables.");
+
+   if (!ai) {
+    throw new Error("GEMINI_API_KEY is not set in server environment variables.");
   }
-
-  const ai = new GoogleGenAI({ apiKey });
-
+  
   // Build the prompt with context
   const prompt = `
 You are an expert procurement analyst for Indian government tenders.
@@ -57,5 +60,27 @@ Format Requirements:
   }
 
   throw lastError;
+}
+
+/**
+ * Generates a 768-dimensional vector embedding for a given text.
+ * @param {string} text - Title or search query
+ * @returns {Promise<number[]>} - Array of 768 floating point numbers
+ */
+export async function generateEmbedding(text) {
+   if(!ai){
+    throw new Error("GEMINI_API_KEY is not set in server environment variables.");
+
+   }
+
+   const response=await ai.models.embedContent({
+    model:"gemini-embedding-001",
+    contents:text,
+    config: {
+      outputDimensionality: 768, // Keeps our 768-dimension pgvector compatibility
+    },
+   });
+
+   return response.embeddings[0].values;
 }
 

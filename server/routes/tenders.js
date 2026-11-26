@@ -4,7 +4,7 @@ import wrapAsync from '../middlewares/wrapAsync.js';
 import requiresAuth from '../middlewares/auth.js';
 import {prisma} from '../lib/prisma.js';
 import redis from "../lib/redis.js";
-import { streamTenderSummary } from '../lib/ai.js';
+import { streamTenderSummary,generateEmbedding } from '../lib/ai.js';
 
 
 const router=express.Router();
@@ -42,7 +42,7 @@ router.get("/matching",requiresAuth,wrapAsync(async(req,res,next)=>{
 }));
 
 // GET /api/tenders/saved - Fetch all active saved tenders for logged-in user
-router.get("/saved", requiresAuth, wrapAsync(async (req, res) => {
+router.get("/saved", requiresAuth, wrapAsync(async (req, res,next) => {
    const now = new Date();
    const records = await prisma.savedTender.findMany({
      where: { 
@@ -72,7 +72,7 @@ router.get("/saved", requiresAuth, wrapAsync(async (req, res) => {
 }));
 
 // GET /api/tenders/saved/ids - Lightweight list of active saved IDs for fast icon matching
-router.get("/saved/ids", requiresAuth, wrapAsync(async (req, res) => {
+router.get("/saved/ids", requiresAuth, wrapAsync(async (req, res,next) => {
    const now = new Date();
    const records = await prisma.savedTender.findMany({
      where: { 
@@ -90,8 +90,44 @@ router.get("/saved/ids", requiresAuth, wrapAsync(async (req, res) => {
    res.json(records.map(r => r.tenderId));
 }));
 
+// GET /api/tenders/search?q=...
+// Semantic Vector Search using pgvector Cosine Distance (<=>)
+  router.get("/search",requiresAuth,wrapAsync(async(req,res,next)=>{
+      const query=req.query.q?.trim(); // Holds teh etxt user typed in search bar
+      if(!query){
+         return res.json([]);
+      }
+
+      // 1. Convert user's natural language query into 768-dimensional vector
+      const queryVector = await generateEmbedding(query);
+      const vectorString = JSON.stringify(queryVector);
+
+      // 2. Query Neon DB using pgvector Cosine Distance (<=>)
+      // Lower distance = more semantically similar (0 = identical meaning)
+      const tenders=await prisma.$queryRaw`
+       SELECT 
+       t.id, 
+       t.title, 
+       t.department, 
+       t."referenceNo", 
+       t."sourceUrl", 
+       t.deadline, 
+       t."scrapedAt", 
+       t."categoryId", 
+       t.summary,
+       (t.embedding <=>${vectorString}::vector) AS distance,
+       row_to_json(c) AS category
+       FROM "Tender" t
+       LEFT JOIN "Category" c ON t."categoryId"=c.id
+       WHERE t.embedding IS NOT NULL AND (t.deadline > now() OR t.deadline IS NULL)
+       ORDER BY distance ASC
+       LIMIT 25;
+      `
+       res.json(tenders);
+  }))
+
 // POST /api/tenders/:id/save - Toggle bookmark for a tender
-router.post("/:id/save", requiresAuth, wrapAsync(async (req, res) => {
+router.post("/:id/save", requiresAuth, wrapAsync(async (req, res,next) => {
    const { id: tenderId } = req.params;
 
    const existing = await prisma.savedTender.findUnique({
@@ -126,7 +162,7 @@ router.post("/:id/save", requiresAuth, wrapAsync(async (req, res) => {
 
 // POST /api/tenders/:id/summarize
 // Generates or returns cached AI summary for a specific tender
-router.post("/:id/summarize", requiresAuth, wrapAsync(async (req, res) => {
+router.post("/:id/summarize", requiresAuth, wrapAsync(async (req, res,next) => {
    const { id } = req.params;
 
    // 1. Fetch tender from DB
@@ -177,5 +213,7 @@ router.post("/:id/summarize", requiresAuth, wrapAsync(async (req, res) => {
    res.write(`data: ${JSON.stringify({ text: "[DONE]" })}\n\n`);
    res.end();
 }));
+
+
 
 export default router;

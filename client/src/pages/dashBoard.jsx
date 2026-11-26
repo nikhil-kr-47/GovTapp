@@ -69,6 +69,8 @@ function Dashboard() {
   const [tenders, setTenders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState(null); // null = default feed, array = semantic search results
+  const [isSearching, setIsSearching] = useState(false);
   const [activeTab, setActiveTab] = useState("all"); // "all" | "saved"
   const [savedIds, setSavedIds] = useState(new Set());
   const [summarizingId, setSummarizingId] = useState(null);
@@ -101,6 +103,30 @@ function Dashboard() {
         console.error("Failed fetching saved IDs:", err);
       });
   }, []);
+
+  // Semantic Vector Search: debounced 350ms to query Neon DB via pgvector
+  useEffect(() => {
+    const query = search.trim();
+    if (!query) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      api
+        .get(`/tenders/search?q=${encodeURIComponent(query)}`)
+        .then((res) => {
+          setSearchResults(res.data);
+        })
+        .catch((err) => {
+          console.error("Semantic search failed:", err);
+        })
+        .finally(() => {
+          setIsSearching(false);
+        });
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [search]);
 
   // Handle bookmarking/saving tender with optimistic UI update
   const handleToggleSave = async (tenderId) => {
@@ -221,16 +247,8 @@ function Dashboard() {
     }
   };
 
-  // Filter active tenders matching the search query
-  const filteredTenders = tenders.filter((t) => {
-    const q = search.toLowerCase();
-    return (
-      t.title.toLowerCase().includes(q) ||
-      t.department.toLowerCase().includes(q) ||
-      t.referenceNo.toLowerCase().includes(q) ||
-      (t.category?.name && t.category.name.toLowerCase().includes(q))
-    );
-  });
+  // Filter active tenders: show semantic search results if searching, otherwise personalized feed
+  const filteredTenders = search.trim() && searchResults !== null ? searchResults : tenders;
 
   // Apply tab filter: "all" vs "saved"
   const displayedTenders = filteredTenders.filter((t) => {
@@ -298,17 +316,30 @@ function Dashboard() {
         <div className="relative w-full md:w-80">
           <input
             type="text"
-            placeholder="Search keywords, department, ref no..."
+            placeholder="AI Search (e.g. solar energy, hospital beds)..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setSearch(val);
+              if (!val.trim()) {
+                setSearchResults(null);
+                setIsSearching(false);
+              } else {
+                setIsSearching(true);
+              }
+            }}
             className="w-full pl-9 pr-8 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm transition"
           />
           <span className="absolute left-3 top-2.5 text-slate-400 text-sm">
-            🔍
+            {isSearching ? <span className="animate-spin inline-block">⚙️</span> : "🔍"}
           </span>
           {search && (
             <button
-              onClick={() => setSearch("")}
+              onClick={() => {
+                setSearch("");
+                setSearchResults(null);
+                setIsSearching(false);
+              }}
               className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs"
             >
               ✕
